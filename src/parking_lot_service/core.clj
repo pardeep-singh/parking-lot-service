@@ -6,7 +6,8 @@
             [com.stuartsierra.component :as csc]
             [parking-lot-service.components :as pc]
             [parking-lot-service.http-util :as phu]
-            [parking-lot-service.middleware :as pm]))
+            [parking-lot-service.middleware :as pm]
+            [parking-lot-service.handlers :as ph]))
 
 
 (defonce ^{:doc "Server system representing HTTP server."}
@@ -20,7 +21,9 @@
    
    (GET "/ping" [] (phu/ok {:ping "PONG"}))
 
-   (GET "/hello" [] (phu/ok {:message "Hello World from Clojure."}))
+   (context "/slots" []
+            (GET "/" {m :params}
+                 (phu/ok (ph/get-slots m))))
 
    (route/not-found "Not Found")))
 
