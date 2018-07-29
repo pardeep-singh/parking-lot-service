@@ -23,7 +23,7 @@
 
    (context "/slots" []
             (GET "/" {m :params}
-                 (phu/ok (ph/get-slots m))))
+                 (phu/ok (ph/get-slots fdb-conn m))))
 
    (route/not-found "Not Found")))
 

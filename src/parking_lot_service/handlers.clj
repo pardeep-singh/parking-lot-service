@@ -2,7 +2,6 @@
   (:require [parking-lot-service.slots :as ps]))
 
 
-
 (defn get-slots
-  [zmap]
-  (ps/get-slots zmap))
+  [fdb-conn zmap]
+  (ps/get-slots fdb-conn zmap))
