@@ -16,7 +16,7 @@
 
 (defn app-routes
   "Returns the APP routes and injects the dependency required by routes."
-  []
+  [fdb-conn]
   (cc/routes
    
    (GET "/ping" [] (phu/ok {:ping "PONG"}))
@@ -30,8 +30,8 @@
 
 (defn app
   "Constructs routes wrapped by middlewares."
-  []
-  (-> (app-routes)
+  [fdb-conn]
+  (-> (app-routes fdb-conn)
       pm/wrap-exceptions
       pm/log-requests))
 
@@ -52,10 +52,13 @@
 
 (defn construct-system
   [configs]
-  (let [routes-comp (pc/map->Routes {:app app})
+  (let [fdb-conn (pc/map->FDB {:api-version 510})
+        routes-comp (pc/map->Routes {:app app})
         http-server-comp (pc/map->HttpServer {:port (:port configs)})]
     (csc/system-map
-     :routes routes-comp
+     :fdb fdb-conn
+     :routes (csc/using routes-comp
+                        [:fdb])
      :http-server (csc/using http-server-comp
                              [:routes]))))
 

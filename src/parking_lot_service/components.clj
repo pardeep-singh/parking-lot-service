@@ -1,11 +1,12 @@
 (ns parking-lot-service.components
   (:require [ring.adapter.jetty :refer [run-jetty]]
             [com.stuartsierra.component :as csc]
-            [clojure.tools.logging :as ctl]))
+            [clojure.tools.logging :as ctl]
+            [parking-lot-service.fdb :as pfdb]))
 
 
 ;; Component to setup the APP routes
-(defrecord Routes [app routes]
+(defrecord Routes [app routes fdb]
   csc/Lifecycle
 
   (start [this]
@@ -13,7 +14,7 @@
       (do
         (ctl/info "Setting up routes component")
         (assoc this
-               :routes (app)))
+               :routes (app fdb)))
       (do
         (ctl/info "Routes component already started")
         this)))
@@ -54,4 +55,31 @@
                :http-server nil))
       (do
         (ctl/info "HTTP server component is nil")
+        this))))
+
+
+(defrecord FDB [fdb-conn api-version cluster-file-path]
+  csc/Lifecycle
+
+  (start [this]
+    (if (nil? fdb-conn)
+      (do
+        (ctl/info "Starting FDB Component")
+        (let [conn (if (seq cluster-file-path)
+                     (pfdb/open-conn api-version cluster-file-path)
+                     (pfdb/open-conn api-version))]
+          (assoc this
+                 :fdb-conn conn)))
+      (do
+        (ctl/info "FDB connection already Exists")
+        this)))
+
+  (stop [this]
+    (if fdb-conn
+      (do
+        (ctl/info "Stopping FDB Component")
+        (assoc this
+               :fdb-conn nil))
+      (do
+        (ctl/info "Can't stop FDB Component as it is already nil.")
         this))))
