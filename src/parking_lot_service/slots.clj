@@ -31,7 +31,7 @@
 (defonce
   ^{:doc "Number of large slots. Motorcyle/Car/Bus can be parked in these slots.
     In order to Park Bus, 5 free slots of this type should be available in same row."}
-  large-slots 5)
+  large-slots 15)
 
 (def slot-types
   {"0" "motorcycle"
@@ -111,7 +111,7 @@
                                              compact-slot-key)
                         (> @ls-counts 0) (do (swap! ls-counts dec)
                                              large-slot-key))
-            slot-id (cs/join [row-label "-" column-label])
+            slot-id (cs/join [row-label column-label])
             slot-subspace (fsubspace/get parking-lot-subspace (ftuple/from slot-type available-status-key))]
         (ftr/run (:fdb-conn fdb-conn)
           (fn [tr]
