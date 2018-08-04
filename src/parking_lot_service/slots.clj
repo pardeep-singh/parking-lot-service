@@ -31,6 +31,7 @@
 
 
 (defn get-slots
+  "Returns a grouped slots based on type and status of slot."
   [fdb-conn zmap]
   (let [slots (fc/get-subspaced-range (:fdb-conn fdb-conn)
                                       parking-lot-subspace
@@ -56,15 +57,16 @@
                                   (= (get k 2) not-available-status-key))
                              (update acc :four_wheeler_occupied_slots conj (last k)))))
         grouped-slots (reduce-kv group-slots-fn
-                                 {:four_wheeler_available_slots []
-                                  :four_wheeler_occupied_slots []
-                                  :two_wheeler_available_slots []
-                                  :two_wheeler_occupied_slots []}
+                                 {}
                                  slots)]
     {:slots grouped-slots}))
 
 
 (defn init-parking-lot
+  "Initializes the parking lot space based on the value of `rows` and `columns`.
+  Alternatively assign slots to both `two-wheeler-subspace` and `four-wheeler-subspace`.
+  Sets subspaced keys in `two-wheeler-subspace` or `four-wheeler-subspace` based on `status` flag
+  also sets slot info in `slots-info-subspace`."
   [fdb-conn rows columns]
   (let [status (atom true)]
     (for [x (take rows label)
@@ -92,7 +94,11 @@
 
 
 (defn reset-parking-lot
+  "Clears `parking-lot-subspace` and `slots-info-subspace` and initializes the
+  parking lot again."
   [fdb]
   (fc/clear-subspaced-range (:fdb-conn fdb)
                             parking-lot-subspace)
+  (fc/clear-subspaced-range (:fdb-conn fdb)
+                            slots-info-subspace)
   (init-parking-lot fdb 2 2))
