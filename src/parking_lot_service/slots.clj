@@ -52,46 +52,6 @@
 (def slots-info-subspace (fsubspace/create-subspace (ftuple/from "slots_info")))
 
 
-(defn get-slots
-  "Returns a grouped slots based on type and status of slot."
-  [fdb-conn zmap]
-  (let [slots (fc/get-subspaced-range (:fdb-conn fdb-conn)
-                                      parking-lot-subspace
-                                      (ftuple/from)
-                                      :keyfn (comp ftuple/get-items ftuple/from-bytes)
-                                      :valfn #(bs/convert % String))
-        group-slots-fn (fn [acc k v]
-                         (let [k (vec k)]
-                           (cond
-                             (and (= (get k 1) motorcycle-slot-key)
-                                  (= (get k 2) available-status-key))
-                             (update acc :motorcyle_available_slots conj (last k))
-
-                             (and (= (get k 1) motorcycle-slot-key)
-                                  (= (get k 2) not-available-status-key))
-                             (update acc :motorcycle_occupied_slots conj (last k))
-
-                             (and (= (get k 1) compact-slot-key)
-                                  (= (get k 2) available-status-key))
-                             (update acc :compact_available_slots conj (last k))
-
-                             (and (= (get k 1) compact-slot-key)
-                                  (= (get k 2) not-available-status-key))
-                             (update acc :compact_occupied_slots conj (last k))
-
-                             (and (= (get k 1) large-slot-key)
-                                  (= (get k 2) available-status-key))
-                             (update acc :large_available_slots conj (last k))
-
-                             (and (= (get k 1) large-slot-key)
-                                  (= (get k 2) not-available-status-key))
-                             (update acc :large_occupied_slots conj (last k)))))
-        grouped-slots (reduce-kv group-slots-fn
-                                 {}
-                                 slots)]
-    {:slots grouped-slots}))
-
-
 (defn init-parking-lot
   "Initializes the parking-lot space based on the value of `rows` and `columns`(row * columns).
   Assigns slots to each type of slot based on `motorcycle-slot-counts`, `compact-slot-counts` and
@@ -144,3 +104,57 @@
   [fdb]
   (clear-parking-lot fdb)
   (init-parking-lot fdb rows columns motorcyle-slots compact-slots large-slots))
+
+
+(defn get-slots
+  "Returns a grouped slots based on type and status of slot."
+  [fdb-conn zmap]
+  (let [slots (fc/get-subspaced-range (:fdb-conn fdb-conn)
+                                      parking-lot-subspace
+                                      (ftuple/from)
+                                      :keyfn (comp ftuple/get-items ftuple/from-bytes)
+                                      :valfn #(bs/convert % String))
+        group-slots-fn (fn [acc k v]
+                         (let [k (vec k)]
+                           (cond
+                             (and (= (get k 1) motorcycle-slot-key)
+                                  (= (get k 2) available-status-key))
+                             (update acc :motorcyle_available_slots conj (last k))
+
+                             (and (= (get k 1) motorcycle-slot-key)
+                                  (= (get k 2) not-available-status-key))
+                             (update acc :motorcycle_occupied_slots conj (last k))
+
+                             (and (= (get k 1) compact-slot-key)
+                                  (= (get k 2) available-status-key))
+                             (update acc :compact_available_slots conj (last k))
+
+                             (and (= (get k 1) compact-slot-key)
+                                  (= (get k 2) not-available-status-key))
+                             (update acc :compact_occupied_slots conj (last k))
+
+                             (and (= (get k 1) large-slot-key)
+                                  (= (get k 2) available-status-key))
+                             (update acc :large_available_slots conj (last k))
+
+                             (and (= (get k 1) large-slot-key)
+                                  (= (get k 2) not-available-status-key))
+                             (update acc :large_occupied_slots conj (last k)))))
+        grouped-slots (reduce-kv group-slots-fn
+                                 {}
+                                 slots)]
+    {:slots grouped-slots}))
+
+
+(defn get-slot
+  "Returns a slot massaged object given a slot-id."
+  [fdb slot-id]
+  (let [slot-info (fc/get-subspaced-key (:fdb-conn fdb)
+                                        slots-info-subspace
+                                        (ftuple/from slot-id)
+                                        :valfn #(cc/parse-string (bs/convert % String) true))
+        massaged-slot (-> slot-info
+                          (assoc :id slot-id)
+                          (update :type slot-types)
+                          (update :status slot-status))]
+    {:slot massaged-slot}))

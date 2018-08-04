@@ -5,3 +5,8 @@
 (defn get-slots
   [fdb-conn zmap]
   (ps/get-slots fdb-conn zmap))
+
+
+(defn get-slot
+  [fdb-conn slot-id]
+  (ps/get-slot fdb-conn slot-id))
