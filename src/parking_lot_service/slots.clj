@@ -8,26 +8,48 @@
             [cheshire.core :as cc]
             [clj-fdb.transaction :as ftr]))
 
+(defonce
+  ^{:doc "Number of rows in a Parking-lot."}
+  rows 5)
+
+(defonce
+  ^{:doc "Number of columns in a Parking-lot."}
+  columns 5)
+
+(defonce
+  ^{:doc "Alphabetical labels. These are used for labelling slots."}
+  labels (map (comp str char) (range 65 91)))
+
+(defonce
+  ^{:doc "Number of motorcyle slots. Only motorcycle can be parked in these slots."}
+  motorcyle-slots 5)
+
+(defonce
+  ^{:doc "Number of compact slots. Motorcyle or Car can be parked in these slots."}
+  compact-slots 5)
+
+(defonce
+  ^{:doc "Number of large slots. Motorcyle/Car/Bus can be parked in these slots.
+    In order to Park Bus, 5 free slots of this type should be available in same row."}
+  large-slots 5)
 
 (def slot-types
-  {"0" "two_wheeler"
-   "1" "four_wheeler"})
+  {"0" "motorcycle"
+   "1" "compact"
+   "2" "large"})
 
 (def slot-status
   {"0" "available"
    "1" "not_available"})
 
-(defonce two-wheeler-key "0")
-(defonce four-wheeler-key "1")
-(defonce available-status-key "0")
-(defonce not-available-status-key "0")
+(def motorcycle-slot-key "0")
+(def compact-slot-key "1")
+(def large-slot-key "2")
+(def available-status-key "0")
+(def not-available-status-key "1")
 
-(def label ["A" "B" "C" "D"])
-
-(defonce parking-lot-subspace (fsubspace/create-subspace (ftuple/from "slots")))
-(defonce slots-info-subspace (fsubspace/create-subspace (ftuple/from "slots_info")))
-(def two-wheeler-subspace (fsubspace/get parking-lot-subspace (ftuple/from two-wheeler-key)))
-(def four-wheeler-subspace (fsubspace/get parking-lot-subspace (ftuple/from four-wheeler-key)))
+(def parking-lot-subspace (fsubspace/create-subspace (ftuple/from "slots")))
+(def slots-info-subspace (fsubspace/create-subspace (ftuple/from "slots_info")))
 
 
 (defn get-slots
@@ -41,21 +63,29 @@
         group-slots-fn (fn [acc k v]
                          (let [k (vec k)]
                            (cond
-                             (and (= (get k 1) two-wheeler-key)
+                             (and (= (get k 1) motorcycle-slot-key)
                                   (= (get k 2) available-status-key))
-                             (update acc :two_wheeler_available_slots conj (last k))
+                             (update acc :motorcyle_available_slots conj (last k))
 
-                             (and (= (get k 1) two-wheeler-key)
+                             (and (= (get k 1) motorcycle-slot-key)
                                   (= (get k 2) not-available-status-key))
-                             (update acc :two_wheeler_occurpied_slots conj (last k))
+                             (update acc :motorcycle_occupied_slots conj (last k))
 
-                             (and (= (get k 1) four-wheeler-key)
+                             (and (= (get k 1) compact-slot-key)
                                   (= (get k 2) available-status-key))
-                             (update acc :four_wheeler_available_slots conj (last k))
+                             (update acc :compact_available_slots conj (last k))
 
-                             (and (= (get k 1) four-wheeler-key)
+                             (and (= (get k 1) compact-slot-key)
                                   (= (get k 2) not-available-status-key))
-                             (update acc :four_wheeler_occupied_slots conj (last k)))))
+                             (update acc :compact_occupied_slots conj (last k))
+
+                             (and (= (get k 1) large-slot-key)
+                                  (= (get k 2) available-status-key))
+                             (update acc :large_available_slots conj (last k))
+
+                             (and (= (get k 1) large-slot-key)
+                                  (= (get k 2) not-available-status-key))
+                             (update acc :large_occupied_slots conj (last k)))))
         grouped-slots (reduce-kv group-slots-fn
                                  {}
                                  slots)]
@@ -63,42 +93,54 @@
 
 
 (defn init-parking-lot
-  "Initializes the parking lot space based on the value of `rows` and `columns`.
-  Alternatively assign slots to both `two-wheeler-subspace` and `four-wheeler-subspace`.
-  Sets subspaced keys in `two-wheeler-subspace` or `four-wheeler-subspace` based on `status` flag
-  also sets slot info in `slots-info-subspace`."
-  [fdb-conn rows columns]
-  (let [status (atom true)]
-    (for [x (take rows label)
-          y (take columns label)]
-      (let [vehicle-type (if @status
-                           two-wheeler-key
-                           four-wheeler-key)
-            vehicle-subspace (if (= vehicle-type two-wheeler-key)
-                               (fsubspace/get two-wheeler-subspace (ftuple/from available-status-key))
-                               (fsubspace/get four-wheeler-subspace (ftuple/from available-status-key)))
-            slot-id (cs/join [x y])]
-        (swap! status not)
+  "Initializes the parking-lot space based on the value of `rows` and `columns`(row * columns).
+  Assigns slots to each type of slot based on `motorcycle-slot-counts`, `compact-slot-counts` and
+  `large-slot-counts`. Slots to each type is assigned in continous manner."
+  [fdb-conn rows columns motorcycle-slot-counts compact-slot-counts large-slot-counts]
+  {:pre [(= (* rows columns)
+            (apply + [motorcycle-slot-counts compact-slot-counts large-slot-counts]))]}
+  (let [ms-counts (atom motorcycle-slot-counts)
+        cs-counts (atom compact-slot-counts)
+        ls-counts (atom large-slot-counts)]
+    (for [row-label (take rows labels)
+          column-label (take columns labels)]
+      (let [slot-type (cond
+                        (> @ms-counts 0) (do (swap! ms-counts dec)
+                                             motorcycle-slot-key)
+                        (> @cs-counts 0) (do (swap! cs-counts dec)
+                                             compact-slot-key)
+                        (> @ls-counts 0) (do (swap! ls-counts dec)
+                                             large-slot-key))
+            slot-id (cs/join [row-label "-" column-label])
+            slot-subspace (fsubspace/get parking-lot-subspace (ftuple/from slot-type available-status-key))]
         (ftr/run (:fdb-conn fdb-conn)
           (fn [tr]
             (fc/set-subspaced-key tr
-                                  vehicle-subspace
+                                  slot-subspace
                                   (ftuple/from slot-id)
                                   "1")
             (fc/set-subspaced-key tr
                                   slots-info-subspace
                                   (ftuple/from slot-id)
-                                  {:type vehicle-type
+                                  {:type slot-type
                                    :status available-status-key}
                                   :valfn #(bs/to-byte-array (cc/generate-string %)))))))))
 
 
-(defn reset-parking-lot
-  "Clears `parking-lot-subspace` and `slots-info-subspace` and initializes the
-  parking lot again."
+(defn clear-parking-lot
+  "Clears `parking-lot-subspace` and `slots-info-subspace`."
   [fdb]
   (fc/clear-subspaced-range (:fdb-conn fdb)
                             parking-lot-subspace)
   (fc/clear-subspaced-range (:fdb-conn fdb)
-                            slots-info-subspace)
-  (init-parking-lot fdb 2 2))
+                            slots-info-subspace))
+
+
+(defn reset-parking-lot
+  "Clears `parking-lot-subspace` and `slots-info-subspace` and initializes the
+  parking-lot again. Initializes parking-lot based on `rows` * `columns` value.
+  Slots are divided between different types based on `motorcycle-slots`, `compact-slots` and
+  `large-slots` values."
+  [fdb]
+  (clear-parking-lot fdb)
+  (init-parking-lot fdb rows columns motorcyle-slots compact-slots large-slots))
