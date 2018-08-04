@@ -9,57 +9,90 @@
             [clj-fdb.transaction :as ftr]))
 
 
-(defonce slot-types
-  {0 "2 Wheeler"
-   1 "4 Wheeler"})
+(def slot-types
+  {"0" "two_wheeler"
+   "1" "four_wheeler"})
 
-(defonce slot-status
-  {0 "Available"
-   1 "Not Available"})
+(def slot-status
+  {"0" "available"
+   "1" "not_available"})
 
+(defonce two-wheeler-key "0")
+(defonce four-wheeler-key "1")
+(defonce available-status-key "0")
+(defonce not-available-status-key "0")
 
 (def label ["A" "B" "C" "D"])
 
-
 (defonce parking-lot-subspace (fsubspace/create-subspace (ftuple/from "slots")))
-(def two-wheeler-subspace (fsubspace/get parking-lot-subspace (ftuple/from "0")))
-(def four-wheeler-subspace (fsubspace/get parking-lot-subspace (ftuple/from "1")))
+(defonce slots-info-subspace (fsubspace/create-subspace (ftuple/from "slots_info")))
+(def two-wheeler-subspace (fsubspace/get parking-lot-subspace (ftuple/from two-wheeler-key)))
+(def four-wheeler-subspace (fsubspace/get parking-lot-subspace (ftuple/from four-wheeler-key)))
 
 
 (defn get-slots
   [fdb-conn zmap]
-  (let [two-wheeler-slots (fc/get-subspaced-range (:fdb-conn fdb-conn)
-                                                  two-wheeler-subspace
-                                                  (ftuple/from)
-                                                  :keyfn (comp ftuple/get-items ftuple/from-bytes)
-                                                  :valfn #(cc/parse-string (bs/convert % String) true))
-        four-wheeler-slots (fc/get-subspaced-range (:fdb-conn fdb-conn)
-                                                   four-wheeler-subspace
-                                                   (ftuple/from)
-                                                   :keyfn (comp ftuple/get-items ftuple/from-bytes)
-                                                   :valfn #(cc/parse-string (bs/convert % String) true))]
-    {:slots {:two_wheeler_slots (vals two-wheeler-slots)
-             :four_wheeler_slots (vals four-wheeler-slots)}}))
+  (let [slots (fc/get-subspaced-range (:fdb-conn fdb-conn)
+                                      parking-lot-subspace
+                                      (ftuple/from)
+                                      :keyfn (comp ftuple/get-items ftuple/from-bytes)
+                                      :valfn #(bs/convert % String))
+        group-slots-fn (fn [acc k v]
+                         (let [k (vec k)]
+                           (cond
+                             (and (= (get k 1) two-wheeler-key)
+                                  (= (get k 2) available-status-key))
+                             (update acc :two_wheeler_available_slots conj (last k))
+
+                             (and (= (get k 1) two-wheeler-key)
+                                  (= (get k 2) not-available-status-key))
+                             (update acc :two_wheeler_occurpied_slots conj (last k))
+
+                             (and (= (get k 1) four-wheeler-key)
+                                  (= (get k 2) available-status-key))
+                             (update acc :four_wheeler_available_slots conj (last k))
+
+                             (and (= (get k 1) four-wheeler-key)
+                                  (= (get k 2) not-available-status-key))
+                             (update acc :four_wheeler_occupied_slots conj (last k)))))
+        grouped-slots (reduce-kv group-slots-fn
+                                 {:four_wheeler_available_slots []
+                                  :four_wheeler_occupied_slots []
+                                  :two_wheeler_available_slots []
+                                  :two_wheeler_occupied_slots []}
+                                 slots)]
+    {:slots grouped-slots}))
 
 
 (defn init-parking-lot
   [fdb-conn rows columns]
-  (for [x (take rows label)
-        y (take columns label)]
-    (let [vehicle-type (rand-int 2)
-          vehicle-subspace (if (= vehicle-type 0)
-                             (fsubspace/get two-wheeler-subspace (ftuple/from "0"))
-                             (fsubspace/get four-wheeler-subspace (ftuple/from "0")))
-          slot-id (cs/join [x y])]
-      (ftr/run (:fdb-conn fdb-conn)
-        (fn [tr]
-          (fc/set-subspaced-key tr
-                                vehicle-subspace
-                                (ftuple/from slot-id)
-                                {:id slot-id :type vehicle-type :status 0}
-                                :valfn #(bs/to-byte-array (cc/generate-string %)))
-          (fc/set-subspaced-key tr
-                                parking-lot-subspace
-                                (ftuple/from slot-id)
-                                {:type vehicle-type :status 0}
-                                :valfn #(bs/to-byte-array (cc/generate-string %))))))))
+  (let [status (atom true)]
+    (for [x (take rows label)
+          y (take columns label)]
+      (let [vehicle-type (if @status
+                           two-wheeler-key
+                           four-wheeler-key)
+            vehicle-subspace (if (= vehicle-type two-wheeler-key)
+                               (fsubspace/get two-wheeler-subspace (ftuple/from available-status-key))
+                               (fsubspace/get four-wheeler-subspace (ftuple/from available-status-key)))
+            slot-id (cs/join [x y])]
+        (swap! status not)
+        (ftr/run (:fdb-conn fdb-conn)
+          (fn [tr]
+            (fc/set-subspaced-key tr
+                                  vehicle-subspace
+                                  (ftuple/from slot-id)
+                                  "1")
+            (fc/set-subspaced-key tr
+                                  slots-info-subspace
+                                  (ftuple/from slot-id)
+                                  {:type vehicle-type
+                                   :status available-status-key}
+                                  :valfn #(bs/to-byte-array (cc/generate-string %)))))))))
+
+
+(defn reset-parking-lot
+  [fdb]
+  (fc/clear-subspaced-range (:fdb-conn fdb)
+                            parking-lot-subspace)
+  (init-parking-lot fdb 2 2))
