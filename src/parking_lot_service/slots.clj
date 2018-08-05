@@ -58,10 +58,15 @@
   {"0" "1"
    "1" "2"})
 
+(defonce required-slots-counts
+  {motorcycle-slot-key 1
+   compact-slot-key 1
+   large-slot-key 5})
+
 (defn init-parking-lot
-  "Initializes the parking-lot space based on the value of `rows` and `columns`(row * columns).
-  Assigns slots to each type of slot based on `motorcycle-slot-counts`, `compact-slot-counts` and
-  `large-slot-counts`. Slots to each type is assigned in continous manner."
+  "Initializes the parking-lot space based on the value of rows and columns(row * columns).
+  Assigns slots to each type of slot based on motorcycle-slot-counts, compact-slot-counts and
+  large-slot-counts. Slots to each type is assigned in continous manner."
   [fdb-conn rows columns motorcycle-slot-counts compact-slot-counts large-slot-counts]
   {:pre [(= (* rows columns)
             (apply + [motorcycle-slot-counts compact-slot-counts large-slot-counts]))]}
@@ -104,7 +109,7 @@
 
 (defn reset-parking-lot
   "Clears `parking-lot-subspace` and `slots-info-subspace` and initializes the
-  parking-lot again. Initializes parking-lot based on `rows` * `columns` value.
+  parking-lot again. Initializes parking-lot based on rows and columns value.
   Slots are divided between different types based on `motorcycle-slots`, `compact-slots` and
   `large-slots` values."
   [fdb]
@@ -172,62 +177,104 @@
     {:slot massaged-slot}))
 
 
-;; TODO: Extend this function to only park bus if 5 slots are available in same row
-(defn get-available-slot-id
-  "Given a slot-key, returns the next available slot-id.
-  If slot is not available in given slot-key, tries to find an available
-  slot based on `next-available-slot-order`."
-  [transaction slot-key]
+(defn park-vehicle!
+  "Performs side effects required to park a vechicle.
+  Summary of side effects:
+  1. Clears the subspaced key from `available-status-key` subspace.
+  2. Sets the subspaced key in `unavailable-status-key` subspace.
+  3. Updates the slot info. in `slots-info-subspace`.
+
+  Note: All operations should either succeed or failure together. Partial
+  operation will leave parking-lot in a inconsistent state."
+  [tr slot-id slot-key]
+  (fc/clear-subspaced-key tr
+                          (fsubspace/get parking-lot-subspace
+                                         (ftuple/from slot-key available-status-key))
+                          (ftuple/from slot-id))
+  (fc/set-subspaced-key tr
+                        (fsubspace/get parking-lot-subspace
+                                       (ftuple/from slot-key unavailable-status-key))
+                        (ftuple/from slot-id)
+                        "1")
+  (let [slot-info (fc/get-subspaced-key tr
+                                        slots-info-subspace
+                                        (ftuple/from slot-id)
+                                        :valfn #(cc/parse-string (bs/convert % String) true))
+        updated-slot-info (assoc slot-info
+                                 :parked_vehicle_type slot-key
+                                 :parking_start_ts (ctc/to-long (ct/now))
+                                 :status unavailable-status-key)]
+    (fc/set-subspaced-key tr
+                          slots-info-subspace
+                          (ftuple/from slot-id)
+                          updated-slot-info
+                          :valfn #(bs/to-byte-array (cc/generate-string %)))))
+
+
+(defn get-available-row-for-bus-parking
+  "Given a list of available slot keys, finds a row where
+  Bus can be parked. Bus can only be parked if 5 consective slots are available in
+  a row."
+  [available-slot-keys]
+  (->> available-slot-keys
+       (group-by (fn [label]
+                   (first label)))
+       vals
+       (filter (fn [labels]
+                 (= (count labels)
+                    (get required-slots-counts large-slot-key))))
+       first
+       sort))
+
+
+(defn get-available-slots-ids
+  "Given a slot-key, returns the next available list of slot-ids.
+  If slots are not available in given slot-key, tries to find an available
+  slots based on `next-available-slot-order`.
+  Returns list of slot-ids based on the `required-slots-counts` to park a vehicle."
+  [transaction base-slot-key slot-key]
   (let [subspace-key (fsubspace/get parking-lot-subspace (ftuple/from slot-key available-status-key))
         available-slots (fc/get-subspaced-range transaction
                                                 subspace-key
                                                 (ftuple/from)
                                                 :keyfn (comp last ftuple/get-items ftuple/from-bytes))
-        first-available-slot (first (keys available-slots))]
-    (if (seq first-available-slot)
+        available-slots* (if (= base-slot-key large-slot-key)
+                           (->> available-slots
+                                keys
+                                get-available-row-for-bus-parking
+                                (take (get required-slots-counts large-slot-key)))
+                           (->> available-slots
+                                keys
+                                sort
+                                (take (get required-slots-counts base-slot-key))))]
+    (if (seq available-slots*)
       {:slot-key slot-key
-       :available-slot-id first-available-slot}
+       :available-slots-ids available-slots*}
       (when (next-available-slot-order slot-key)
-        (get-available-slot-id transaction (next-available-slot-order slot-key))))))
+        (get-available-slots-ids transaction base-slot-key (next-available-slot-order slot-key))))))
 
 
-;; get available slot-id
-;; unset the available slot-id from available-status subspace
-;; set the slot-id in unavailable-statis subspace
-;; update the slot info in slot-info subspace, add the vehicle-type parked and parking ts
-;; return the booked slot-id
+(defn wrapped-park-vehicle-tr
+  "Given a slot_type, returns a wrapped transaction which performs side-effects for
+  parking a vehicle."
+  [slot_type]
+  (fn [tr]
+    (let [slot-key (-> slot-types
+                       map-invert
+                       (get slot_type))
+          {:keys [slot-key available-slots-ids]} (get-available-slots-ids tr slot-key slot-key)]
+      (when (seq available-slots-ids)
+        (doseq [slot-id available-slots-ids]
+          (park-vehicle! tr slot-id slot-key))
+        (first available-slots-ids)))))
+
+
 (defn park-vehicle
+  "Parks a vehicle for given slot_type and returns the slot_id if available slot is found
+  otherwise returns a error message if no free slot is found."
   [fdb {:keys [slot_type]}]
-  (let [available-slot-id (ftr/run (:fdb-conn fdb)
-                            (fn [tr]
-                              (let [slot-key (-> slot-types
-                                                 map-invert
-                                                 (get slot_type))
-                                    {:keys [slot-key available-slot-id]} (get-available-slot-id tr slot-key)]
-                                (when available-slot-id
-                                  (fc/clear-subspaced-key tr
-                                                          (fsubspace/get parking-lot-subspace
-                                                                         (ftuple/from slot-key available-status-key))
-                                                          (ftuple/from available-slot-id))
-                                  (fc/set-subspaced-key tr
-                                                        (fsubspace/get parking-lot-subspace
-                                                                       (ftuple/from slot-key unavailable-status-key))
-                                                        (ftuple/from available-slot-id)
-                                                        "1")
-                                  (let [slot-info (fc/get-subspaced-key tr
-                                                                        slots-info-subspace
-                                                                        (ftuple/from available-slot-id)
-                                                                        :valfn #(cc/parse-string (bs/convert % String) true))
-                                        updated-slot-info (assoc slot-info
-                                                                 :parked_vehicle_type slot-key
-                                                                 :parking_start_ts (ctc/to-long (ct/now))
-                                                                 :status (slot-status unavailable-status-key))]
-                                    (fc/set-subspaced-key tr
-                                                          slots-info-subspace
-                                                          (ftuple/from available-slot-id)
-                                                          updated-slot-info
-                                                          :valfn #(bs/to-byte-array (cc/generate-string %))))
-                                  available-slot-id))))]
-    (if available-slot-id
-      {:slot_id available-slot-id}
+  (let [parked-slot-id (ftr/run (:fdb-conn fdb) (wrapped-park-vehicle-tr slot_type))]
+    ;; TODO throw an not found exception when slot-id is not found
+    (if parked-slot-id
+      {:slot_id parked-slot-id}
       {:message (format "No available slot for %s slot type." slot_type)})))
