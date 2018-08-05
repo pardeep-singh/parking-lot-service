@@ -10,3 +10,8 @@
 (defn get-slot
   [fdb-conn slot-id]
   (ps/get-slot fdb-conn slot-id))
+
+
+(defn park-vehicle
+  [fdb params]
+  (ps/park-vehicle fdb params))

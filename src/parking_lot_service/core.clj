@@ -2,6 +2,9 @@
   (:gen-class)
   (:require [clojure.tools.logging :as ctl]
             [compojure.core :as cc :refer [context defroutes POST GET PUT DELETE]]
+            [ring.middleware.keyword-params :refer [wrap-keyword-params]]
+            [ring.middleware.params :refer [wrap-params]]
+            [ring.middleware.json :refer [wrap-json-params]]
             [compojure.route :as route]
             [com.stuartsierra.component :as csc]
             [parking-lot-service.components :as pc]
@@ -26,7 +29,10 @@
                  (phu/ok (ph/get-slots fdb-conn m)))
 
             (GET "/:id" {m :params}
-                 (phu/ok (ph/get-slot fdb-conn (:id m)))))
+                 (phu/ok (ph/get-slot fdb-conn (:id m))))
+
+            (POST "/park" {m :params}
+                  (phu/ok (ph/park-vehicle fdb-conn m))))
 
    (route/not-found "Not Found")))
 
@@ -35,6 +41,9 @@
   "Constructs routes wrapped by middlewares."
   [fdb-conn]
   (-> (app-routes fdb-conn)
+      wrap-keyword-params
+      wrap-params
+      wrap-json-params
       pm/wrap-exceptions
       pm/log-requests))
 

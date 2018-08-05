@@ -12,7 +12,8 @@
                  [com.stuartsierra/component "0.2.3"]
                  [org.clojure/tools.logging "0.4.0"]
                  [clj-http "3.7.0"]
-                 [clj-fdb "0.1.0"]]
+                 [clj-fdb "0.1.0"]
+                 [ring/ring-json "0.4.0"]]
   :source-paths ["src"]
   :global-vars {*warn-on-reflection* true}
   :manifest {"Project-Name" ~#(:name %)

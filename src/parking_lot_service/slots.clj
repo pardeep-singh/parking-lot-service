@@ -6,7 +6,10 @@
             [clj-fdb.core :as fc]
             [byte-streams :as bs]
             [cheshire.core :as cc]
-            [clj-fdb.transaction :as ftr]))
+            [clj-fdb.transaction :as ftr]
+            [clojure.set :refer [map-invert]]
+            [clj-time.core :as ct]
+            [clj-time.coerce :as ctc]))
 
 (defonce
   ^{:doc "Number of rows in a Parking-lot."}
@@ -51,6 +54,9 @@
 (def parking-lot-subspace (fsubspace/create-subspace (ftuple/from "slots")))
 (def slots-info-subspace (fsubspace/create-subspace (ftuple/from "slots_info")))
 
+(def next-available-slot-order
+  {"0" "1"
+   "1" "2"})
 
 (defn init-parking-lot
   "Initializes the parking-lot space based on the value of `rows` and `columns`(row * columns).
@@ -163,3 +169,64 @@
                           (update :type slot-types)
                           (update :status slot-status))]
     {:slot massaged-slot}))
+
+
+;; TODO: Extend this function to only park bus if 5 slots are available in same row
+(defn get-available-slot-id
+  "Given a slot-key, returns the next available slot-id.
+  If slot is not available in given slot-key, tries to find an available
+  slot based on `next-available-slot-order`."
+  [transaction slot-key]
+  (let [subspace-key (fsubspace/get parking-lot-subspace (ftuple/from slot-key available-status-key))
+        available-slots (fc/get-subspaced-range transaction
+                                                subspace-key
+                                                (ftuple/from)
+                                                :keyfn (comp last ftuple/get-items ftuple/from-bytes))
+        first-available-slot (first (keys available-slots))]
+    (if (seq first-available-slot)
+      {:slot-key slot-key
+       :available-slot-id first-available-slot}
+      (when (next-available-slot-order slot-key)
+        (get-available-slot-id transaction (next-available-slot-order slot-key))))))
+
+
+;; get available slot-id
+;; unset the available slot-id from available-status subspace
+;; set the slot-id in unavailable-statis subspace
+;; update the slot info in slot-info subspace, add the vehicle-type parked and parking ts
+;; return the booked slot-id
+(defn park-vehicle
+  [fdb {:keys [slot_type]}]
+  (let [available-slot-id (ftr/run (:fdb-conn fdb)
+                            (fn [tr]
+                              (let [slot-key (-> slot-types
+                                                 map-invert
+                                                 (get slot_type))
+                                    {:keys [slot-key available-slot-id]} (get-available-slot-id tr slot-key)]
+                                (when available-slot-id
+                                  (fc/clear-subspaced-key tr
+                                                          (fsubspace/get parking-lot-subspace
+                                                                         (ftuple/from slot-key available-status-key))
+                                                          (ftuple/from available-slot-id))
+                                  (fc/set-subspaced-key tr
+                                                        (fsubspace/get parking-lot-subspace
+                                                                       (ftuple/from slot-key unavailable-status-key))
+                                                        (ftuple/from available-slot-id)
+                                                        "1")
+                                  (let [slot-info (fc/get-subspaced-key tr
+                                                                        slots-info-subspace
+                                                                        (ftuple/from available-slot-id)
+                                                                        :valfn #(cc/parse-string (bs/convert % String) true))
+                                        updated-slot-info (assoc slot-info
+                                                                 :parked_vehicle_type slot-key
+                                                                 :parking_start_ts (ctc/to-long (ct/now))
+                                                                 :status (slot-status unavailable-status-key))]
+                                    (fc/set-subspaced-key tr
+                                                          slots-info-subspace
+                                                          (ftuple/from available-slot-id)
+                                                          updated-slot-info
+                                                          :valfn #(bs/to-byte-array (cc/generate-string %))))
+                                  available-slot-id))))]
+    (if available-slot-id
+      {:slot_id available-slot-id}
+      {:message (format "No available slot for %s slot type." slot_type)})))
