@@ -21,15 +21,15 @@
   labels (map (comp str char) (range 65 91)))
 
 (defonce
-  ^{:doc "Number of motorcyle slots. Only motorcycle can be parked in these slots."}
-  motorcyle-slots 5)
+  ^{:doc "Number of motorcycle slots. Only motorcycle can be parked in these slots."}
+  motorcycle-slots 5)
 
 (defonce
-  ^{:doc "Number of compact slots. Motorcyle or Car can be parked in these slots."}
+  ^{:doc "Number of compact slots. Motorcycle or Car can be parked in these slots."}
   compact-slots 5)
 
 (defonce
-  ^{:doc "Number of large slots. Motorcyle/Car/Bus can be parked in these slots.
+  ^{:doc "Number of large slots. Motorcycle/Car/Bus can be parked in these slots.
     In order to Park Bus, 5 free slots of this type should be available in same row."}
   large-slots 15)
 
@@ -40,13 +40,13 @@
 
 (def slot-status
   {"0" "available"
-   "1" "not_available"})
+   "1" "unavailable"})
 
 (def motorcycle-slot-key "0")
 (def compact-slot-key "1")
 (def large-slot-key "2")
 (def available-status-key "0")
-(def not-available-status-key "1")
+(def unavailable-status-key "1")
 
 (def parking-lot-subspace (fsubspace/create-subspace (ftuple/from "slots")))
 (def slots-info-subspace (fsubspace/create-subspace (ftuple/from "slots_info")))
@@ -103,7 +103,7 @@
   `large-slots` values."
   [fdb]
   (clear-parking-lot fdb)
-  (init-parking-lot fdb rows columns motorcyle-slots compact-slots large-slots))
+  (init-parking-lot fdb rows columns motorcycle-slots compact-slots large-slots))
 
 
 (defn get-slots
@@ -119,29 +119,34 @@
                            (cond
                              (and (= (get k 1) motorcycle-slot-key)
                                   (= (get k 2) available-status-key))
-                             (update acc :motorcyle_available_slots conj (last k))
+                             (update acc :motorcycle_available_slots conj (last k))
 
                              (and (= (get k 1) motorcycle-slot-key)
-                                  (= (get k 2) not-available-status-key))
-                             (update acc :motorcycle_occupied_slots conj (last k))
+                                  (= (get k 2) unavailable-status-key))
+                             (update acc :motorcycle_unavailable_slots conj (last k))
 
                              (and (= (get k 1) compact-slot-key)
                                   (= (get k 2) available-status-key))
                              (update acc :compact_available_slots conj (last k))
 
                              (and (= (get k 1) compact-slot-key)
-                                  (= (get k 2) not-available-status-key))
-                             (update acc :compact_occupied_slots conj (last k))
+                                  (= (get k 2) unavailable-status-key))
+                             (update acc :compact_unavailable_slots conj (last k))
 
                              (and (= (get k 1) large-slot-key)
                                   (= (get k 2) available-status-key))
                              (update acc :large_available_slots conj (last k))
 
                              (and (= (get k 1) large-slot-key)
-                                  (= (get k 2) not-available-status-key))
-                             (update acc :large_occupied_slots conj (last k)))))
+                                  (= (get k 2) unavailable-status-key))
+                             (update acc :large_unavailable_slots conj (last k)))))
         grouped-slots (reduce-kv group-slots-fn
-                                 {}
+                                 {:motorcycle_available_slots []
+                                  :motorcycle_unavailable_slots []
+                                  :compact_available_slots []
+                                  :compact_unavailable_slots []
+                                  :large_available_slots []
+                                  :large_unavailable_slots []}
                                  slots)]
     {:slots grouped-slots}))
 
