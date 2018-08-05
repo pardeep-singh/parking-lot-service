@@ -167,7 +167,8 @@
         massaged-slot (-> slot-info
                           (assoc :id slot-id)
                           (update :type slot-types)
-                          (update :status slot-status))]
+                          (update :status slot-status)
+                          (update :parked_vehicle_type slot-types))]
     {:slot massaged-slot}))
 
 
