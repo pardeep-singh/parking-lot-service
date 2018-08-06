@@ -177,15 +177,8 @@
     {:slot massaged-slot}))
 
 
-(defn park-vehicle!
-  "Performs side effects required to park a vechicle.
-  Summary of side effects:
-  1. Clears the subspaced key from `available-status-key` subspace.
-  2. Sets the subspaced key in `unavailable-status-key` subspace.
-  3. Updates the slot info. in `slots-info-subspace`.
-
-  Note: All operations should either succeed or failure together. Partial
-  operation will leave parking-lot in a inconsistent state."
+(defn mark-slot-as-unavailable!
+  "Moves slot-id from available to unavailable subspace."
   [tr slot-id slot-key]
   (fc/clear-subspaced-key tr
                           (fsubspace/get parking-lot-subspace
@@ -195,7 +188,12 @@
                         (fsubspace/get parking-lot-subspace
                                        (ftuple/from slot-key unavailable-status-key))
                         (ftuple/from slot-id)
-                        "1")
+                        "1"))
+
+
+(defn update-slot-info-with-vehicle-info!
+  "Updates slot-info with vehicle info for given slot-id."
+  [tr slot-key slot-id allotted-slots]
   (let [slot-info (fc/get-subspaced-key tr
                                         slots-info-subspace
                                         (ftuple/from slot-id)
@@ -203,7 +201,8 @@
         updated-slot-info (assoc slot-info
                                  :parked_vehicle_type slot-key
                                  :parking_start_ts (ctc/to-long (ct/now))
-                                 :status unavailable-status-key)]
+                                 :status unavailable-status-key
+                                 :allotted_slots allotted-slots)]
     (fc/set-subspaced-key tr
                           slots-info-subspace
                           (ftuple/from slot-id)
@@ -256,7 +255,16 @@
 
 (defn wrapped-park-vehicle-tr
   "Given a slot_type, returns a wrapped transaction which performs side-effects for
-  parking a vehicle."
+  parking a vehicle.
+
+  Transction performs side effects required to park a vehicle.
+  Summary of side effects:
+  1. Clears the subspaced key from `available-status-key` subspace.
+  2. Sets the subspaced key in `unavailable-status-key` subspace.
+  3. Updates the slot info. in `slots-info-subspace`.
+
+  Note: All operations should either succeed or failure together. Partial
+  operation will leave parking-lot in a inconsistent state."
   [slot_type]
   (fn [tr]
     (let [slot-key (-> slot-types
@@ -265,7 +273,8 @@
           {:keys [slot-key available-slots-ids]} (get-available-slots-ids tr slot-key slot-key)]
       (when (seq available-slots-ids)
         (doseq [slot-id available-slots-ids]
-          (park-vehicle! tr slot-id slot-key))
+          (mark-slot-as-unavailable! tr slot-id slot-key))
+        (update-slot-info-with-vehicle-info! tr slot-key (first available-slots-ids) available-slots-ids)
         (first available-slots-ids)))))
 
 
