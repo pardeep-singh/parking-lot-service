@@ -231,26 +231,26 @@
   If slots are not available in given slot-key, tries to find an available
   slots based on `next-available-slot-order`.
   Returns list of slot-ids based on the `required-slots-counts` to park a vehicle."
-  [transaction base-slot-key slot-key]
+  [tr base-slot-key slot-key]
   (let [subspace-key (fsubspace/get parking-lot-subspace (ftuple/from slot-key available-status-key))
-        available-slots (fc/get-subspaced-range transaction
+        available-slots (fc/get-subspaced-range tr
                                                 subspace-key
                                                 (ftuple/from)
                                                 :keyfn (comp last ftuple/get-items ftuple/from-bytes))
-        available-slots* (if (= base-slot-key large-slot-key)
-                           (->> available-slots
-                                keys
-                                get-available-row-for-bus-parking
-                                (take (get required-slots-counts large-slot-key)))
-                           (->> available-slots
-                                keys
-                                sort
-                                (take (get required-slots-counts base-slot-key))))]
-    (if (seq available-slots*)
+        allotted-slots (if (= base-slot-key large-slot-key)
+                         (->> available-slots
+                              keys
+                              get-available-row-for-bus-parking
+                              (take (get required-slots-counts large-slot-key)))
+                         (->> available-slots
+                              keys
+                              sort
+                              (take (get required-slots-counts base-slot-key))))]
+    (if (seq allotted-slots)
       {:slot-key slot-key
-       :available-slots-ids available-slots*}
+       :allotted-slots allotted-slots}
       (when (next-available-slot-order slot-key)
-        (get-available-slots-ids transaction base-slot-key (next-available-slot-order slot-key))))))
+        (get-available-slots-ids tr base-slot-key (next-available-slot-order slot-key))))))
 
 
 (defn wrapped-park-vehicle-tr
@@ -270,12 +270,12 @@
     (let [slot-key (-> slot-types
                        map-invert
                        (get slot_type))
-          {:keys [slot-key available-slots-ids]} (get-available-slots-ids tr slot-key slot-key)]
-      (when (seq available-slots-ids)
-        (doseq [slot-id available-slots-ids]
+          {:keys [slot-key allotted-slots]} (get-available-slots-ids tr slot-key slot-key)]
+      (when (seq allotted-slots)
+        (doseq [slot-id allotted-slots]
           (mark-slot-as-unavailable! tr slot-id slot-key))
-        (update-slot-info-with-vehicle-info! tr slot-key (first available-slots-ids) available-slots-ids)
-        (first available-slots-ids)))))
+        (update-slot-info-with-vehicle-info! tr slot-key (first allotted-slots) allotted-slots)
+        (first allotted-slots)))))
 
 
 (defn park-vehicle
