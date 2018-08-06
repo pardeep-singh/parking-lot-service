@@ -36,6 +36,11 @@
     In order to Park Bus, 5 free slots of this type should be available in same row."}
   large-slots 15)
 
+(def vehicle-types->slot-key
+  {"motorcycle" "motorcycle"
+   "car" "compact"
+   "bus" "large"})
+
 (def slot-types
   {"0" "motorcycle"
    "1" "compact"
@@ -172,8 +177,7 @@
         massaged-slot (-> slot-info
                           (assoc :id slot-id)
                           (update :type slot-types)
-                          (update :status slot-status)
-                          (update :parked_vehicle_type slot-types))]
+                          (update :status slot-status))]
     {:slot massaged-slot}))
 
 
@@ -193,13 +197,13 @@
 
 (defn update-slot-info-with-vehicle-info!
   "Updates slot-info with vehicle info for given slot-id."
-  [tr slot-key slot-id allotted-slots]
+  [tr slot-key vehicle-type slot-id allotted-slots]
   (let [slot-info (fc/get-subspaced-key tr
                                         slots-info-subspace
                                         (ftuple/from slot-id)
                                         :valfn #(cc/parse-string (bs/convert % String) true))
         updated-slot-info (assoc slot-info
-                                 :parked_vehicle_type slot-key
+                                 :vehicle_type vehicle-type
                                  :parking_start_ts (ctc/to-long (ct/now))
                                  :status unavailable-status-key
                                  :allotted_slots allotted-slots)]
@@ -254,7 +258,7 @@
 
 
 (defn wrapped-park-vehicle-tr
-  "Given a slot_type, returns a wrapped transaction which performs side-effects for
+  "Given a slot-type and vehicle-type, returns a wrapped transaction which performs side-effects for
   parking a vehicle.
 
   Transction performs side effects required to park a vehicle.
@@ -265,25 +269,26 @@
 
   Note: All operations should either succeed or failure together. Partial
   operation will leave parking-lot in a inconsistent state."
-  [slot_type]
+  [slot-type vehicle-type]
   (fn [tr]
     (let [slot-key (-> slot-types
                        map-invert
-                       (get slot_type))
+                       (get slot-type))
           {:keys [slot-key allotted-slots]} (get-available-slots-ids tr slot-key slot-key)]
       (when (seq allotted-slots)
         (doseq [slot-id allotted-slots]
           (mark-slot-as-unavailable! tr slot-id slot-key))
-        (update-slot-info-with-vehicle-info! tr slot-key (first allotted-slots) allotted-slots)
+        (update-slot-info-with-vehicle-info! tr slot-key vehicle-type (first allotted-slots) allotted-slots)
         (first allotted-slots)))))
 
 
 (defn park-vehicle
-  "Parks a vehicle for given slot_type and returns the slot_id if available slot is found
-  otherwise returns a error message if no free slot is found."
-  [fdb {:keys [slot_type]}]
-  (let [parked-slot-id (ftr/run (:fdb-conn fdb) (wrapped-park-vehicle-tr slot_type))]
+  "Parks a given vehicle and returns the slot_id if available slot is found
+  otherwise returns an error message if no free slot is found."
+  [fdb {:keys [vehicle_type]}]
+  (let [slot-type (get vehicle-types->slot-key vehicle_type)
+        parked-slot-id (ftr/run (:fdb-conn fdb) (wrapped-park-vehicle-tr slot-type vehicle_type))]
     ;; TODO throw an not found exception when slot-id is not found
     (if parked-slot-id
       {:slot_id parked-slot-id}
-      {:message (format "No available slot for %s slot type." slot_type)})))
+      {:message (format "No available slot for %s vehicle type." vehicle_type)})))
