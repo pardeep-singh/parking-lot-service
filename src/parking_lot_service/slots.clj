@@ -261,7 +261,6 @@
   "Given a slot-type and vehicle-type, returns a wrapped transaction which performs side-effects for
   parking a vehicle.
 
-  Transction performs side effects required to park a vehicle.
   Summary of side effects:
   1. Clears the subspaced key from `available-status-key` subspace.
   2. Sets the subspaced key in `unavailable-status-key` subspace.
@@ -292,3 +291,55 @@
     (if parked-slot-id
       {:slot_id parked-slot-id}
       {:message (format "No available slot for %s vehicle type." vehicle_type)})))
+
+
+(defn mark-slot-as-available!
+  "Moves slot-id from unavailable to available subspace."
+  [tr slot-id slot-key]
+  (fc/clear-subspaced-key tr
+                          (fsubspace/get parking-lot-subspace
+                                         (ftuple/from slot-key unavailable-status-key))
+                          (ftuple/from slot-id))
+  (fc/set-subspaced-key tr
+                        (fsubspace/get parking-lot-subspace
+                                       (ftuple/from slot-key available-status-key))
+                        (ftuple/from slot-id)
+                        "1"))
+
+
+(defn wrapped-unpark-vehicle-tr
+  "Returns wrapped transaction which is used to unpark a vehicle.
+
+  - Moves allotted slot-ids from unavailable to available subspace.
+  - Update slot-info by removing parking info keys.
+  - Calculates parking charges based using current time and parking_start_ts stored in slot-info."
+  [slot-id]
+  (fn [tr]
+    (let [slot-info (fc/get-subspaced-key tr
+                                          slots-info-subspace
+                                          (ftuple/from slot-id)
+                                          :valfn #(cc/parse-string (bs/convert % String) true))]
+      (when (= (:status slot-info)
+               unavailable-status-key)
+        (doseq [slot-id (:allotted_slots slot-info)]
+          (mark-slot-as-available! tr slot-id (:type slot-info)))
+        (fc/set-subspaced-key tr
+                              slots-info-subspace
+                              (ftuple/from slot-id)
+                              (-> slot-info
+                                  (select-keys [:type :status])
+                                  (assoc :status available-status-key))
+                              :valfn #(bs/to-byte-array (cc/generate-string %)))
+        ;; TODO update this to change based on number of minutes. currently is based on milli-seconds.
+        (when (:parking_start_ts slot-info)
+          (- (ctc/to-long (ct/now))
+             (:parking_start_ts slot-info)))))))
+
+
+(defn unpark-vehicle
+  "Unparks the vehicle and returns the amount if given slot-id was unavailable."
+  [fdb {:keys [slot_id]}]
+  (let [parking-charges (ftr/run (:fdb-conn fdb) (wrapped-unpark-vehicle-tr slot_id))]
+    (if parking-charges
+      {:charges parking-charges}
+      {:msg "No vehicle found at given slot-id."})))

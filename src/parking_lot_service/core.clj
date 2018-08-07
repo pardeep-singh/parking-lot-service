@@ -32,7 +32,10 @@
                  (phu/ok (ph/get-slot fdb-conn (:id m))))
 
             (POST "/park" {m :params}
-                  (phu/ok (ph/park-vehicle fdb-conn m))))
+                  (phu/ok (ph/park-vehicle fdb-conn m)))
+
+            (POST "/unpark" {m :params}
+                  (phu/ok (ph/unpark-vehicle fdb-conn m))))
 
    (route/not-found "Not Found")))
 

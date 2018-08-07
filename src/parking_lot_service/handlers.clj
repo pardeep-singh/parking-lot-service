@@ -15,3 +15,8 @@
 (defn park-vehicle
   [fdb params]
   (ps/park-vehicle fdb params))
+
+
+(defn unpark-vehicle
+  [fdb params]
+  (ps/unpark-vehicle fdb params))
