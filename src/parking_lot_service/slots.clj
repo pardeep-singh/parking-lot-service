@@ -68,6 +68,7 @@
    compact-slot-key 1
    large-slot-key 5})
 
+
 (defn init-parking-lot
   "Initializes the parking-lot space based on the value of rows and columns(row * columns).
   Assigns slots to each type of slot based on motorcycle-slot-counts, compact-slot-counts and
@@ -342,10 +343,10 @@
                                   (select-keys [:type :status])
                                   (assoc :status available-status-key))
                               :valfn #(bs/to-byte-array (cc/generate-string %)))
-        ;; TODO update this to change based on number of minutes. currently is based on milli-seconds.
         (when (:parking_start_ts slot-info)
-          (- (ctc/to-long (ct/now))
-             (:parking_start_ts slot-info)))))))
+          (-> (:parking_start_ts slot-info)
+              ctc/from-long
+              ct/mins-ago))))))
 
 
 (defn unpark-vehicle
