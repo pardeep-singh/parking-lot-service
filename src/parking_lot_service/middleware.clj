@@ -8,10 +8,15 @@
   (fn [req]
     (try
       (handler req)
+      (catch java.lang.AssertionError exception
+        (ctl/error exception)
+        (phu/bad-request "Invalid data"))
       (catch Exception exception
-        (ctl/error exception
-                   "Internal Server Error")
-        (phu/internal-server-error "Internal Server Error")))))
+        (ctl/error exception)
+        (if (= (:type (ex-data exception))
+               :not-found)
+          (phu/not-found (:msg (ex-data exception)))
+          (phu/internal-server-error "Internal Server Error"))))))
 
 
 (defn log-requests

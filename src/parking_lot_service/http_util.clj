@@ -20,3 +20,15 @@
   [message]
   (json-response {:error message}
                  :status 500))
+
+
+(defn not-found
+  [message]
+  (json-response {:error message}
+                 :status 404))
+
+
+(defn bad-request
+  [message]
+  (json-response {:error message}
+                 :status 400))

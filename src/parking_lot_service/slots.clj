@@ -122,6 +122,7 @@
   (init-parking-lot fdb rows columns motorcycle-slots compact-slots large-slots))
 
 
+;; TODO exception type and status param in this handler
 (defn get-slots
   "Returns a grouped slots based on type and status of slot."
   [fdb-conn zmap]
@@ -170,6 +171,7 @@
 (defn get-slot
   "Returns a slot massaged object given a slot-id."
   [fdb slot-id]
+  {:pre [(seq slot-id)]}
   (let [slot-info (fc/get-subspaced-key (:fdb-conn fdb)
                                         slots-info-subspace
                                         (ftuple/from slot-id)
@@ -178,7 +180,14 @@
                           (assoc :id slot-id)
                           (update :type slot-types)
                           (update :status slot-status))]
-    {:slot massaged-slot}))
+    (if (seq slot-info)
+      (-> {:slot slot-info}
+          (assoc-in [:slot :id] slot-id)
+          (update-in [:slot :type] slot-types)
+          (update-in [:slot :status] slot-status))
+      (throw (ex-info (format "Slot not found for %s slot-id" slot-id)
+                      {:msg (format "Slot not found for %s slot-id" slot-id)
+                       :type :not-found})))))
 
 
 (defn mark-slot-as-unavailable!
@@ -285,12 +294,15 @@
   "Parks a given vehicle and returns the slot_id if available slot is found
   otherwise returns an error message if no free slot is found."
   [fdb {:keys [vehicle_type]}]
+  {:pre [(seq vehicle_type)]}
   (let [slot-type (get vehicle-types->slot-key vehicle_type)
         parked-slot-id (ftr/run (:fdb-conn fdb) (wrapped-park-vehicle-tr slot-type vehicle_type))]
     ;; TODO throw an not found exception when slot-id is not found
     (if parked-slot-id
       {:slot_id parked-slot-id}
-      {:message (format "No available slot for %s vehicle type." vehicle_type)})))
+      (throw (ex-info (format "No available slot for %s" vehicle_type)
+                      {:msg (format "No available slot for %s" vehicle_type)
+                       :type :not-found})))))
 
 
 (defn mark-slot-as-available!
@@ -339,7 +351,10 @@
 (defn unpark-vehicle
   "Unparks the vehicle and returns the amount if given slot-id was unavailable."
   [fdb {:keys [slot_id]}]
+  {:pre [(seq slot_id)]}
   (let [parking-charges (ftr/run (:fdb-conn fdb) (wrapped-unpark-vehicle-tr slot_id))]
     (if parking-charges
       {:charges parking-charges}
-      {:msg "No vehicle found at given slot-id."})))
+      (throw (ex-info (format "Slot not found for %s slot-id" slot_id)
+                      {:msg (format "Slot not found for %s slot-id" slot_id)
+                       :type :not-found})))))
