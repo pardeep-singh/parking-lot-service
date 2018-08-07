@@ -123,10 +123,9 @@
   (init-parking-lot fdb rows columns motorcycle-slots compact-slots large-slots))
 
 
-;; TODO exception type and status param in this handler
 (defn get-slots
   "Returns a grouped slots based on type and status of slot."
-  [fdb-conn zmap]
+  [fdb-conn]
   (let [slots (fc/get-subspaced-range (:fdb-conn fdb-conn)
                                       parking-lot-subspace
                                       (ftuple/from)
@@ -295,10 +294,10 @@
   "Parks a given vehicle and returns the slot_id if available slot is found
   otherwise returns an error message if no free slot is found."
   [fdb {:keys [vehicle_type]}]
-  {:pre [(seq vehicle_type)]}
+  {:pre [(seq vehicle_type)
+         ((set (keys vehicle-types->slot-key)) vehicle_type)]}
   (let [slot-type (get vehicle-types->slot-key vehicle_type)
         parked-slot-id (ftr/run (:fdb-conn fdb) (wrapped-park-vehicle-tr slot-type vehicle_type))]
-    ;; TODO throw an not found exception when slot-id is not found
     (if parked-slot-id
       {:slot_id parked-slot-id}
       (throw (ex-info (format "No available slot for %s" vehicle_type)

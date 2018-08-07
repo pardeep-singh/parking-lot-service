@@ -10,7 +10,7 @@
             [parking-lot-service.components :as pc]
             [parking-lot-service.http-util :as phu]
             [parking-lot-service.middleware :as pm]
-            [parking-lot-service.handlers :as ph]))
+            [parking-lot-service.slots :as ps]))
 
 
 (defonce ^{:doc "Server system representing HTTP server."}
@@ -25,17 +25,17 @@
    (GET "/ping" [] (phu/ok {:ping "PONG"}))
 
    (context "/slots" []
-            (GET "/" {m :params}
-                 (phu/ok (ph/get-slots fdb-conn m)))
+            (GET "/" []
+                 (phu/ok (ps/get-slots fdb-conn)))
 
             (GET "/:id" {m :params}
-                 (phu/ok (ph/get-slot fdb-conn (:id m))))
+                 (phu/ok (ps/get-slot fdb-conn (:id m))))
 
             (POST "/park" {m :params}
-                  (phu/ok (ph/park-vehicle fdb-conn m)))
+                  (phu/ok (ps/park-vehicle fdb-conn m)))
 
             (POST "/unpark" {m :params}
-                  (phu/ok (ph/unpark-vehicle fdb-conn m))))
+                  (phu/ok (ps/unpark-vehicle fdb-conn m))))
 
    (route/not-found "Not Found")))
 
