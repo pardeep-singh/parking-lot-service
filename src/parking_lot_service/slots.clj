@@ -56,8 +56,12 @@
 (def available-status-key "0")
 (def unavailable-status-key "1")
 
-(def parking-lot-subspace (fsubspace/create-subspace (ftuple/from "slots")))
-(def slots-info-subspace (fsubspace/create-subspace (ftuple/from "slots_info")))
+
+(def ^:dynamic parking-lot-subspace
+  (fsubspace/create-subspace (ftuple/from "slots")))
+
+(def ^:dynamic slots-info-subspace
+  (fsubspace/create-subspace (ftuple/from "slots_info")))
 
 (def next-available-slot-order
   {"0" "1"
@@ -79,7 +83,7 @@
   (let [ms-counts (atom motorcycle-slot-counts)
         cs-counts (atom compact-slot-counts)
         ls-counts (atom large-slot-counts)]
-    (for [row-label (take rows labels)
+    (doseq [row-label (take rows labels)
           column-label (take columns labels)]
       (let [slot-type (cond
                         (> @ms-counts 0) (do (swap! ms-counts dec)
