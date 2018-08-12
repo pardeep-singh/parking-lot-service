@@ -49,16 +49,18 @@
   (let [random-str (rand-string 10)
         slots-subspace (str "slots:" random-str)
         slots-info-subspace (str "slots_info:" random-str)]
-    (binding [ps/parking-lot-subspace (fsubspace/create-subspace (ftuple/from slots-subspace))
-              ps/slots-info-subspace (fsubspace/create-subspace (ftuple/from slots-info-subspace))]
-      (ps/init-parking-lot (:fdb @server-system)
-                           ps/rows
-                           ps/columns
-                           ps/motorcycle-slots
-                           ps/compact-slots
-                           ps/large-slots)
-      (tests)
-      (ps/clear-parking-lot (:fdb @server-system)))))
+    (alter-var-root #'ps/parking-lot-subspace (constantly (fsubspace/create-subspace (ftuple/from slots-subspace))))
+    (alter-var-root #'ps/slots-info-subspace (constantly (fsubspace/create-subspace (ftuple/from slots-info-subspace))))
+    (ps/init-parking-lot (:fdb @server-system)
+                         ps/rows
+                         ps/columns
+                         ps/motorcycle-slots
+                         ps/compact-slots
+                         ps/large-slots)
+    (tests)
+    (ps/clear-parking-lot (:fdb @server-system))
+    (alter-var-root #'ps/parking-lot-subspace (constantly (fsubspace/create-subspace (ftuple/from "slots"))))
+    (alter-var-root #'ps/slots-info-subspace (constantly (fsubspace/create-subspace (ftuple/from "slots_info"))))))
 
 
 (use-fixtures :once once-fixture)
@@ -85,4 +87,88 @@
                        (cc/parse-string true))]
       (is (= (:slot response)
              {:type "motorcycle" :status "available" :id "AA"})
-          "Response contains expected fields with expected values."))))
+          "Response contains expected fields with expected values.")))
+
+  (testing "GET /slots/:id API with invalid :id"
+    (let [response (-> (str @service-url "/slots/XX")
+                       (http/get {:throw-exceptions false}))]
+      (is (= (:status response)
+             404)
+          "Response status is 404."))))
+
+
+(deftest park-vehicle-test
+  (testing "Park Motorcycle"
+    (let [response (http/post (str @service-url "/slots/park")
+                              {:body (cc/generate-string {:vehicle_type "motorcycle"})
+                               :content-type :json})
+          slot-id (-> response
+                      :body
+                      (cc/parse-string true)
+                      :slot_id)
+          slot-info (-> (str @service-url "/slots/" slot-id)
+                        http/get
+                        :body
+                        (cc/parse-string true)
+                        :slot)
+          expected-slot-info {:type "motorcycle"
+                              :status "unavailable"
+                              :vehicle_type "motorcycle"
+                              :allotted_slots [slot-id]
+                              :id slot-id}]
+      (is (= (:status response)
+             200)
+          "Response status is 200.")
+      (is (= (dissoc slot-info :parking_start_ts)
+             expected-slot-info)
+          "slot-info response contains expected values.")))
+
+  (testing "Park Car"
+    (let [response (http/post (str @service-url "/slots/park")
+                              {:body (cc/generate-string {:vehicle_type "car"})
+                               :content-type :json})
+          slot-id (-> response
+                      :body
+                      (cc/parse-string true)
+                      :slot_id)
+          slot-info (-> (str @service-url "/slots/" slot-id)
+                        http/get
+                        :body
+                        (cc/parse-string true)
+                        :slot)
+          expected-slot-info {:type "compact"
+                              :status "unavailable"
+                              :vehicle_type "car"
+                              :allotted_slots [slot-id]
+                              :id slot-id}]
+      (is (= (:status response)
+             200)
+          "Response status is 200.")
+      (is (= (dissoc slot-info :parking_start_ts)
+             expected-slot-info)
+          "slot-info response contains expected values.")))
+
+  (testing "Park Bus"
+    (let [response (http/post (str @service-url "/slots/park")
+                              {:body (cc/generate-string {:vehicle_type "bus"})
+                               :content-type :json})
+          slot-id (-> response
+                      :body
+                      (cc/parse-string true)
+                      :slot_id)
+          slot-info (-> (str @service-url "/slots/" slot-id)
+                        http/get
+                        :body
+                        (cc/parse-string true)
+                        :slot)
+          expected-slot-info {:type "large"
+                              :status "unavailable"
+                              :vehicle_type "bus"
+                              :id slot-id}]
+      (is (= (:status response)
+             200)
+          "Response status is 200.")
+      (is (= (dissoc slot-info :parking_start_ts :allotted_slots)
+             expected-slot-info)
+          "slot-info response contains expected values."))))
+
