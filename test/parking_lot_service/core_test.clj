@@ -172,3 +172,68 @@
              expected-slot-info)
           "slot-info response contains expected values."))))
 
+
+(deftest unpark-vehicle-test
+  (testing "Unpark Motorcycle"
+    (let [response (http/post (str @service-url "/slots/park")
+                              {:body (cc/generate-string {:vehicle_type "motorcycle"})
+                               :content-type :json})
+          slot-id (-> response
+                      :body
+                      (cc/parse-string true)
+                      :slot_id)
+          _ (http/post (str @service-url "/slots/unpark")
+                       {:body (cc/generate-string {:slot_id slot-id})
+                        :content-type :json})
+          unparked-slot-info (-> (str @service-url "/slots/" slot-id)
+                                 http/get
+                                 :body
+                                 (cc/parse-string true)
+                                 :slot)]
+      (is (= unparked-slot-info
+             {:type "motorcycle"
+              :status "available"
+              :id slot-id})
+          "Slot is marked as available after unparking the vehicle.")))
+  (testing "Unpark Car"
+    (let [response (http/post (str @service-url "/slots/park")
+                              {:body (cc/generate-string {:vehicle_type "car"})
+                               :content-type :json})
+          slot-id (-> response
+                      :body
+                      (cc/parse-string true)
+                      :slot_id)
+          _ (http/post (str @service-url "/slots/unpark")
+                       {:body (cc/generate-string {:slot_id slot-id})
+                        :content-type :json})
+          unparked-slot-info (-> (str @service-url "/slots/" slot-id)
+                                 http/get
+                                 :body
+                                 (cc/parse-string true)
+                                 :slot)]
+      (is (= unparked-slot-info
+             {:type "compact"
+              :status "available"
+              :id slot-id})
+          "Slot is marked as available after unparking the vehicle.")))
+  (testing "Unpark Bus"
+    (let [response (http/post (str @service-url "/slots/park")
+                              {:body (cc/generate-string {:vehicle_type "bus"})
+                               :content-type :json})
+          slot-id (-> response
+                      :body
+                      (cc/parse-string true)
+                      :slot_id)
+          _ (http/post (str @service-url "/slots/unpark")
+                       {:body (cc/generate-string {:slot_id slot-id})
+                        :content-type :json})
+          unparked-slot-info (-> (str @service-url "/slots/" slot-id)
+                                 http/get
+                                 :body
+                                 (cc/parse-string true)
+                                 :slot)]
+      (is (= unparked-slot-info
+             {:type "large"
+              :status "available"
+              :id slot-id})
+          "Slot is marked as available after unparking the vehicle."))))
