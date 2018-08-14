@@ -21,5 +21,6 @@
              "Build-Date" ~(str (java.util.Date.))}
   :profiles {:dev {:dependencies [[javax.servlet/servlet-api "2.5"]
                                   [ring/ring-mock "0.3.0"]]}}
-  :aot [parking-lot-service.core]
+  :aot [parking-lot-service.core
+        parking-lot-service.slots]
   :main parking-lot-service.core)

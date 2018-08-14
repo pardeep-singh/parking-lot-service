@@ -1,4 +1,5 @@
 (ns parking-lot-service.slots
+  (:gen-class)
   (:require [clojure.string :as cs]
             [parking-lot-service.fdb :as fdb]
             [clj-fdb.subspace.subspace :as fsubspace]
@@ -9,7 +10,8 @@
             [clj-fdb.transaction :as ftr]
             [clojure.set :refer [map-invert]]
             [clj-time.core :as ct]
-            [clj-time.coerce :as ctc]))
+            [clj-time.coerce :as ctc]
+            [parking-lot-service.fdb :refer [open-conn]]))
 
 (defonce
   ^{:doc "Number of rows in a Parking-lot."}
@@ -362,3 +364,9 @@
       (throw (ex-info (format "Slot not found for %s slot-id" slot_id)
                       {:msg (format "Slot not found for %s slot-id" slot_id)
                        :type :not-found})))))
+
+
+(defn -main
+  []
+  (with-open [conn (open-conn 510)]
+    (reset-parking-lot {:fdb-conn conn})))
