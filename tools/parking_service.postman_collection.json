@@ -1,0 +1,79 @@
+{
+	"variables": [],
+	"info": {
+		"name": "parking lot service",
+		"_postman_id": "f8a394b6-ee9b-1183-99ef-83837ea32038",
+		"description": "",
+		"schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "GET all Slots",
+			"request": {
+				"url": "http://localhost:9099/slots",
+				"method": "GET",
+				"header": [],
+				"body": {
+				    "mode": "formdata",
+                                    "formdata": []
+				},
+				"description": ""
+			},
+			"response": []
+		},
+		{
+			"name": "Get given slot info",
+			"request": {
+				"url": "http://localhost:9099/slots/AA",
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": []
+				},
+				"description": ""
+			},
+			"response": []
+		},
+		{
+			"name": "Park Vehicle",
+			"request": {
+				"url": "http://localhost:9099/slots/park",
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"description": ""
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"vehicle_type\": \"bus\"\n}\n"
+				},
+				"description": ""
+			},
+			"response": []
+		},
+		{
+			"name": "Unpark Vehicle",
+			"request": {
+				"url": "http://localhost:9099/slots/unpark",
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"description": ""
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"slot_id\": \"AC\"\n}\n"
+				},
+				"description": ""
+			},
+			"response": []
+		}
+	]
+}
